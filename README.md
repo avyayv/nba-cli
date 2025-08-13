@@ -1,3 +1,3 @@
-# mcp-servers
+# NBA MCP Server
 
-MCP Servers for bxsc.ai
+wraps the NBA API
