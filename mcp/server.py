@@ -42,5 +42,9 @@ mcp.tool(name="game_boxscore")(game_boxscore)
 # Register lineup endpoints
 mcp.tool(name="league_dash_lineups")(league_dash_lineups)
 
+def main():
+    mcp.run(transport='stdio')
+
+
 if __name__ == "__main__":
-    mcp.run(transport='stdio') 
+    main()
