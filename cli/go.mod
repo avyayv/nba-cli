@@ -1,3 +1,3 @@
-module github.com/avyayv/nba-mcp-server/cli
+module github.com/avyayv/nba-cli/cli
 
 go 1.22

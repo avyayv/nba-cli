@@ -1,14 +1,11 @@
 ---
 name: nba-cli
-description: Guidance for AI agents working on this repository's Go-based NBA CLI and Python MCP server. Use when adding commands, testing live NBA/DARKO functionality, installing the CLI, or documenting behavior.
+description: Guidance for AI agents working on this repository's Go-based NBA CLI. Use when adding commands, testing live NBA/DARKO functionality, installing the CLI, or documenting behavior.
 ---
 
-# NBA CLI / MCP Agent Skill
+# NBA CLI Agent Skill
 
-This repository exposes NBA data in two ways:
-
-- `cli/` — Go CLI binary named `nba`. No Python dependency.
-- `mcp/` — Python MCP server using `nba-api`.
+This repository exposes NBA data through `cli/`, a Go CLI binary named `nba`. No Python dependency is required.
 
 ## Non-negotiables
 
@@ -56,14 +53,6 @@ nba live-boxscore <game_id>
 nba live-play-by-play <game_id>
 ```
 
-Live feeds use:
-
-```text
-https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json
-https://cdn.nba.com/static/json/liveData/boxscore/boxscore_<game_id>.json
-https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_<game_id>.json
-```
-
 ### DARKO
 
 ```bash
@@ -71,10 +60,7 @@ nba darko-leaderboard [limit]
 nba darko-player <name|nba_id>
 ```
 
-DARKO is parsed from the embedded Svelte payload at `https://www.darko.app/`. This is unofficial and may break if DARKO changes the frontend payload. Update both:
-
-- `cli/main.go`
-- `mcp/endpoints/darko.py`
+DARKO is parsed from the embedded Svelte payload at `https://www.darko.app/`. This is unofficial and may break if DARKO changes the frontend payload. Update `cli/main.go` when it changes.
 
 ### NBA Stats
 
@@ -95,29 +81,6 @@ nba league-dash-lineups <team_id> [Advanced|Basic] [2-5]
 ```
 
 Stats feeds use `https://stats.nba.com/stats`. These endpoints require browser-like headers and often return `500`, `EOF`, or timeouts when required default parameters are missing.
-
-## MCP server notes
-
-MCP tools are registered in `mcp/server.py` and exported from `mcp/endpoints/__init__.py`.
-
-Live tools:
-
-- `live_scores`
-- `live_game_summary`
-- `live_boxscore`
-- `live_play_by_play`
-
-DARKO tools:
-
-- `darko_leaderboard`
-- `darko_player`
-
-When adding a new MCP endpoint:
-
-1. Add implementation under `mcp/endpoints/`.
-2. Export it from `mcp/endpoints/__init__.py`.
-3. Register it in `mcp/server.py`.
-4. Add docs to `README.md`.
 
 ## Testing checklist
 
@@ -147,20 +110,6 @@ nba league-dash-lineups 1610612747 Advanced 2
 
 If not globally installed, use `go run . <command>` from `cli/`.
 
-Test MCP imports/compile from `mcp/`:
-
-```bash
-uv run python -m compileall server.py endpoints
-```
-
 ## Known edge case
 
-`game-win-probability` relies on an NBA Stats feed that is not available for every game. The CLI/MCP should return JSON with an error field instead of crashing, for example:
-
-```json
-{
-  "gameId": "0022400123",
-  "error": "Win probability feed unavailable for this game",
-  "detail": "..."
-}
-```
+`game-win-probability` relies on an NBA Stats feed that is not available for every game. The CLI should return JSON with an error field instead of crashing.
