@@ -12,7 +12,12 @@ from endpoints import (
     live_scores,
     game_win_probability,
     game_boxscore,
-    league_dash_lineups
+    live_boxscore,
+    live_play_by_play,
+    live_game_summary,
+    league_dash_lineups,
+    darko_leaderboard,
+    darko_player
 )
 
 # Initialize FastMCP server
@@ -38,9 +43,16 @@ mcp.tool(name="league_schedule")(league_schedule)
 mcp.tool(name="live_scores")(live_scores)
 mcp.tool(name="game_win_probability")(game_win_probability)
 mcp.tool(name="game_boxscore")(game_boxscore)
+mcp.tool(name="live_boxscore")(live_boxscore)
+mcp.tool(name="live_play_by_play")(live_play_by_play)
+mcp.tool(name="live_game_summary")(live_game_summary)
 
 # Register lineup endpoints
 mcp.tool(name="league_dash_lineups")(league_dash_lineups)
+
+# Register DARKO endpoints
+mcp.tool(name="darko_leaderboard")(darko_leaderboard)
+mcp.tool(name="darko_player")(darko_player)
 
 def main():
     mcp.run(transport='stdio')

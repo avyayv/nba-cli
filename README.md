@@ -3,9 +3,9 @@
 NBA stats — player, team, game, and lineup data — exposed two ways:
 
 - **[`mcp/`](./mcp)** — an MCP server for use with Claude Desktop, Claude Code, and any MCP-compatible client.
-- **[`cli/`](./cli)** — a standalone command-line tool for the same endpoints.
+- **[`cli/`](./cli)** — a standalone Go command-line tool. It does not require Python.
 
-Both share the same underlying NBA API wrappers; pick whichever fits your workflow.
+The MCP server uses `nba-api`; the Go CLI calls NBA Stats/live JSON feeds directly.
 
 ## MCP Server
 
@@ -44,7 +44,8 @@ uv run nba-mcp-server
 ### Install
 
 ```bash
-uvx --from "git+https://github.com/avyayv/nba-mcp-server#subdirectory=cli" nba --help
+go install github.com/avyayv/nba-mcp-server/cli@latest
+nba --help
 ```
 
 Or for local development:
@@ -52,8 +53,8 @@ Or for local development:
 ```bash
 git clone https://github.com/avyayv/nba-mcp-server
 cd nba-mcp-server/cli
-uv sync
-uv run nba --help
+go build -o nba .
+./nba --help
 ```
 
 ### Usage
@@ -77,14 +78,21 @@ nba league-dash-team-stats --measure-type Advanced
 # Games
 nba league-schedule 1610612747
 nba live-scores
+nba live-game-summary
+nba live-boxscore 0022400123
+nba live-play-by-play 0022400123
 nba game-win-probability 0022400123
 nba game-boxscore 0022400123
+
+# DARKO projections
+nba darko-leaderboard 10
+nba darko-player "Nikola Jokic"
 
 # Lineups
 nba league-dash-lineups 1610612747 --lineup-count 2
 
-# Raw JSON (skip table formatting)
-nba --raw player-career-stats 2544
+# All CLI output is JSON
+nba player-career-stats 2544
 ```
 
 Run `nba --help` or `nba <command> --help` for the full list.
@@ -108,11 +116,18 @@ Both the MCP server and CLI expose the same set of operations:
 - `team_roster` — roster for a team
 - `league_dash_team_stats` — advanced stats for all NBA teams
 
-### Game
+### Game / live
 - `league_schedule` — schedule for a team's games
 - `live_scores` — current live scores
+- `live_game_summary` — compact live score/status/leaders for today's games
+- `live_boxscore` — live box score for a game
+- `live_play_by_play` — live play-by-play for a game
 - `game_win_probability` — win probability data for a game
 - `game_boxscore` — box score for a game
 
 ### Lineup
 - `league_dash_lineups` — lineup statistics and combinations
+
+### DARKO
+- `darko_leaderboard` — current DARKO DPM leaderboard from darko.app
+- `darko_player` — DARKO projection metrics by NBA id or name fragment
