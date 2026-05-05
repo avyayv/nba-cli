@@ -1,0 +1,22 @@
+[project]
+name = "nba-cli"
+version = "0.1.0"
+description = "Command-line interface for the NBA API — player, team, game, and lineup statistics."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1.0",
+    "httpx>=0.28.1",
+    "nba-api>=1.8.0",
+]
+
+[project.scripts]
+nba = "cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["endpoints"]
+include = ["cli.py", "utils.py"]
