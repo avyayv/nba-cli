@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -10,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -19,6 +23,7 @@ import (
 
 const liveBase = "https://cdn.nba.com/static/json/liveData"
 const statsBase = "https://stats.nba.com/stats"
+const defaultUpdateSource = "https://github.com/avyayv/nba-cli.git"
 
 type anyMap map[string]any
 
@@ -57,6 +62,9 @@ func usage() {
 
 Usage: nba <command> [args]
 
+Utilities:
+  update [install_path]        Download, rebuild, and install the latest CLI
+
 Live commands:
   live-scores                 Today's scoreboard
   live-game-summary           Compact live score/status/leaders
@@ -86,6 +94,8 @@ Stats commands:
 
 func run(cmd string, args []string) (any, error) {
 	switch cmd {
+	case "update":
+		return updateCLI(args)
 	case "live-scores":
 		return getJSON(liveBase+"/scoreboard/todaysScoreboard_00.json", nil)
 	case "live-game-summary":
@@ -167,6 +177,219 @@ func statsNeedID(args []string, endpoint string, params map[string]string) (any,
 		}
 	}
 	return stats(endpoint, params)
+}
+
+func updateCLI(args []string) (any, error) {
+	if len(args) > 1 {
+		return nil, errors.New("usage: nba update [install_path]")
+	}
+	target, err := updateTarget(args)
+	if err != nil {
+		return nil, err
+	}
+	previousChecksum, _ := fileSHA256(target)
+
+	source := os.Getenv("NBA_CLI_UPDATE_SOURCE")
+	if source == "" {
+		source = os.Getenv("NBA_CLI_UPDATE_URL")
+	}
+	if source == "" {
+		source = defaultUpdateSource
+	}
+
+	tmp, err := os.MkdirTemp("", "nba-cli-update-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+
+	sourceDir := filepath.Join(tmp, "source")
+	if err := fetchUpdateSource(source, sourceDir); err != nil {
+		return nil, fmt.Errorf("fetch latest source: %w", err)
+	}
+
+	cliDir, err := findCLIDir(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+
+	builtBinary := filepath.Join(tmp, "nba")
+	build := exec.Command("go", "build", "-o", builtBinary, ".")
+	build.Dir = cliDir
+	if out, err := build.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("go build failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	if err := os.Chmod(builtBinary, 0755); err != nil {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(builtBinary, target); err != nil {
+		_ = os.Remove(target)
+		if retryErr := os.Rename(builtBinary, target); retryErr != nil {
+			return nil, retryErr
+		}
+	}
+	newChecksum, _ := fileSHA256(target)
+
+	currentExecutable, _ := os.Executable()
+	return anyMap{
+		"updated":                true,
+		"changed":                previousChecksum == "" || previousChecksum != newChecksum,
+		"installedPath":          target,
+		"source":                 source,
+		"currentExecutable":      currentExecutable,
+		"previousChecksumSha256": previousChecksum,
+		"newChecksumSha256":      newChecksum,
+	}, nil
+}
+
+func updateTarget(args []string) (string, error) {
+	if len(args) == 1 {
+		return filepath.Abs(args[0])
+	}
+	if env := os.Getenv("NBA_CLI_INSTALL_PATH"); env != "" {
+		return filepath.Abs(env)
+	}
+	if exe, err := os.Executable(); err == nil && filepath.Base(exe) == "nba" {
+		return filepath.Abs(exe)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "bin", "nba"), nil
+}
+
+func fetchUpdateSource(source, dst string) error {
+	if strings.HasSuffix(strings.ToLower(strings.Split(source, "?")[0]), ".zip") {
+		archivePath := filepath.Join(filepath.Dir(dst), "source.zip")
+		if err := downloadFile(source, archivePath); err != nil {
+			return err
+		}
+		return unzip(archivePath, dst)
+	}
+
+	clone := exec.Command("git", "clone", "--depth", "1", source, dst)
+	if out, err := clone.CombinedOutput(); err != nil {
+		return fmt.Errorf("git clone failed: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func downloadFile(u, dst string) error {
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "nba-cli updater")
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+		return fmt.Errorf("%s: %s", resp.Status, string(body))
+	}
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
+
+func unzip(src, dst string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	cleanDst, err := filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+	for _, f := range r.File {
+		target := filepath.Join(cleanDst, f.Name)
+		if !strings.HasPrefix(target, cleanDst+string(os.PathSeparator)) {
+			return fmt.Errorf("unsafe zip path %q", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, f.Mode()); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		in, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			in.Close()
+			return err
+		}
+		_, copyErr := io.Copy(out, in)
+		closeInErr := in.Close()
+		closeOutErr := out.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeInErr != nil {
+			return closeInErr
+		}
+		if closeOutErr != nil {
+			return closeOutErr
+		}
+	}
+	return nil
+}
+
+func findCLIDir(root string) (string, error) {
+	var cliDir string
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() || cliDir != "" {
+			return err
+		}
+		if filepath.Base(path) != "cli" {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(path, "go.mod")); err != nil {
+			return nil
+		}
+		if _, err := os.Stat(filepath.Join(path, "main.go")); err != nil {
+			return nil
+		}
+		cliDir = path
+		return filepath.SkipDir
+	}); err != nil {
+		return "", err
+	}
+	if cliDir == "" {
+		return "", errors.New("cli source not found in update source")
+	}
+	return cliDir, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func getJSON(u string, headers map[string]string) (any, error) {

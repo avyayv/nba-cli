@@ -5,9 +5,21 @@ Standalone Go command-line interface for NBA live scores, stats, lineup data, an
 ## Install
 
 ```bash
-go install github.com/avyayv/nba-cli/cli@latest
+git clone https://github.com/avyayv/nba-cli
+cd nba-cli/cli
+mkdir -p ~/.local/bin
+go build -o ~/.local/bin/nba .
+chmod +x ~/.local/bin/nba
 nba --help
 ```
+
+## Update
+
+```bash
+nba update
+```
+
+`nba update` fetches the latest source from GitHub, rebuilds the Go CLI, and replaces the installed `nba` binary. Pass an explicit target path if needed: `nba update ~/.local/bin/nba`.
 
 ## Local development
 
@@ -49,6 +61,9 @@ nba game-boxscore 0022400123
 nba darko-leaderboard 10
 nba darko-player "Nikola Jokic"
 
+# Keep the installed CLI current
+nba update
+
 # Lineups
 nba league-dash-lineups 1610612747 --lineup-count 2
 ```
@@ -58,6 +73,7 @@ Run `nba --help` or `nba <command> --help` for the full list.
 ## Available commands
 
 ### Utilities
+- `update` — fetch, rebuild, and install the latest CLI
 - `get-player-id` — convert a player name to an ID
 - `get-team-id` — convert a team name to an ID
 
