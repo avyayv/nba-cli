@@ -1,0 +1,84 @@
+name: Update Homebrew tap
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew-tap:
+    if: github.repository == 'avyayv/nba-cli'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute source archive metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          short="${sha:0:12}"
+          version="$(date -u +%Y.%m.%d).${short}"
+          archive_url="https://github.com/${GITHUB_REPOSITORY}/archive/${sha}.tar.gz"
+          curl -fsSL "$archive_url" -o source.tar.gz
+          sha256="$(sha256sum source.tar.gz | awk '{print $1}')"
+          {
+            echo "sha=$sha"
+            echo "short=$short"
+            echo "version=$version"
+            echo "sha256=$sha256"
+            echo "archive_url=$archive_url"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check out Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: avyayv/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update nba-cli formula
+        working-directory: homebrew-tap
+        env:
+          ARCHIVE_URL: ${{ steps.meta.outputs.archive_url }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA256: ${{ steps.meta.outputs.sha256 }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("Formula/nba-cli.rb")
+          text = path.read_text()
+          text = re.sub(r'homepage ".*"', 'homepage "https://github.com/avyayv/nba-cli"', text)
+          text = re.sub(r'url ".*"', f'url "{os.environ["ARCHIVE_URL"]}"', text)
+          text = re.sub(r'version ".*"', f'version "{os.environ["VERSION"]}"', text)
+          text = re.sub(r'sha256 ".*"', f'sha256 "{os.environ["SHA256"]}"', text)
+          text = re.sub(r'head ".*", branch: "main"', 'head "https://github.com/avyayv/nba-cli.git", branch: "main"', text)
+          path.write_text(text)
+          PY
+
+      - name: Commit and push tap update
+        working-directory: homebrew-tap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/nba-cli.rb
+          if git diff --cached --quiet; then
+            echo "Homebrew tap is already current."
+            exit 0
+          fi
+          git commit -m "Update nba-cli formula to ${{ steps.meta.outputs.short }}"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          exit 1
