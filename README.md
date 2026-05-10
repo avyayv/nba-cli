@@ -4,6 +4,24 @@ Standalone Go command-line interface for NBA live scores, stats, lineup data, an
 
 ## Install
 
+### Prebuilt release binary
+
+Every push to `main` publishes Linux, macOS, and Windows binaries to [GitHub Releases](https://github.com/avyayv/nba-cli/releases/latest).
+
+macOS Apple Silicon:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/avyayv/nba-cli/releases/latest/download/nba_darwin_arm64.tar.gz | tar -xz
+mv nba ~/.local/bin/nba
+chmod +x ~/.local/bin/nba
+nba --help
+```
+
+Use `nba_darwin_amd64.tar.gz` for Intel Macs, `nba_linux_amd64.tar.gz` / `nba_linux_arm64.tar.gz` for Linux, or the Windows `.zip` assets.
+
+### From source
+
 ```bash
 git clone https://github.com/avyayv/nba-cli
 cd nba-cli/cli

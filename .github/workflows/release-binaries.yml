@@ -1,0 +1,116 @@
+name: Release binaries
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-binaries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-binaries:
+    if: github.repository == 'avyayv/nba-cli'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+
+      - name: Test CLI
+        working-directory: cli
+        run: go test ./...
+
+      - name: Build release archives
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sha="${GITHUB_SHA}"
+          short="${sha:0:12}"
+          version="$(date -u +%Y.%m.%d).${short}"
+          tag="v${version}"
+
+          mkdir -p dist build/release
+
+          build_one() {
+            local goos="$1"
+            local goarch="$2"
+            local ext=""
+            if [[ "$goos" == "windows" ]]; then
+              ext=".exe"
+            fi
+
+            local work="build/release/nba_${goos}_${goarch}"
+            mkdir -p "$work"
+
+            echo "Building ${goos}/${goarch}"
+            (
+              cd cli
+              CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+                go build -trimpath -ldflags "-s -w" -o "../${work}/nba${ext}" .
+            )
+
+            if [[ "$goos" == "windows" ]]; then
+              (cd "$work" && zip -q "../../../dist/nba_${goos}_${goarch}.zip" "nba${ext}")
+            else
+              tar -C "$work" -czf "dist/nba_${goos}_${goarch}.tar.gz" "nba${ext}"
+            fi
+          }
+
+          build_one darwin amd64
+          build_one darwin arm64
+          build_one linux amd64
+          build_one linux arm64
+          build_one windows amd64
+          build_one windows arm64
+
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name checksums.txt -print0 \
+              | sort -z \
+              | xargs -0 sha256sum \
+              > checksums.txt
+          )
+
+          cat > release-notes.md <<EOF
+          Automated binary release for commit ${GITHUB_SHA}.
+
+          Download the archive for your OS/architecture, extract the \`nba\` binary, and place it on your PATH.
+
+          Checksums are in \`checksums.txt\`.
+          EOF
+
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" \
+              --title "nba-cli ${TAG}" \
+              --notes-file release-notes.md
+          else
+            gh release create "$TAG" dist/* \
+              --target "$GITHUB_SHA" \
+              --title "nba-cli ${TAG}" \
+              --notes-file release-notes.md
+          fi
