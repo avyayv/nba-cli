@@ -23,6 +23,9 @@ import (
 
 const liveBase = "https://cdn.nba.com/static/json/liveData"
 const statsBase = "https://stats.nba.com/stats"
+const espnSiteBase = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba"
+const espnWebBase = "https://site.web.api.espn.com/apis"
+const espnCoreBase = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
 const defaultUpdateSource = "https://github.com/avyayv/nba-cli.git"
 
 type anyMap map[string]any
@@ -75,11 +78,34 @@ DARKO:
   darko-leaderboard [limit]   Current DPM leaderboard from darko.app
   darko-player <name|id>      DARKO metrics for a player
 
+ESPN public data:
+  espn-search-player <name>       Search ESPN NBA players
+  get-espn-player-id <name>       Resolve an ESPN player ID
+  get-espn-team-id <team name>    Resolve an ESPN team ID
+  espn-player <id|name>           ESPN player card/profile data
+  espn-player-bio <id|name>       ESPN awards/biographical extras
+  espn-player-stats <id|name>     ESPN player statistics/splits
+  espn-player-contracts <id|name> [season_year]
+  espn-teams                      ESPN teams index
+  espn-team-roster <id|name>      ESPN roster with player biographical data
+  espn-injuries [id|name]         ESPN league or team injury reports
+  espn-news [limit]               ESPN NBA news
+  espn-scoreboard [YYYYMMDD]      ESPN scoreboard
+  espn-game-summary <espn_game_id> ESPN box score, leaders, plays, odds, etc.
+  espn-standings                  ESPN standings hierarchy
+
 Stats commands:
   get-team-id <team name>
   get-player-id <player name>
+  player-profile <player_id>
+  player-awards <player_id>
   player-career-stats <player_id>
   player-game-log <player_id>
+  league-leaders [PTS|REB|AST|...]
+  player-estimated-metrics
+  draft-history [year]
+  franchise-history
+  team-details <team_id>
   league-dash-player-stats <team_id> [Advanced|Basic]
   team-standings
   team-game-log <team_id>
@@ -112,6 +138,46 @@ func run(cmd string, args []string) (any, error) {
 		return darkoLeaderboard(limit)
 	case "darko-player":
 		return need1(args, darkoPlayer)
+	case "espn-search-player":
+		if len(args) < 1 {
+			return nil, errors.New("player name required")
+		}
+		return espnSearchPlayers(strings.Join(args, " "), 10)
+	case "get-espn-player-id":
+		if len(args) < 1 {
+			return nil, errors.New("player name required")
+		}
+		return resolveESPNPlayerID(strings.Join(args, " "))
+	case "get-espn-team-id":
+		if len(args) < 1 {
+			return nil, errors.New("team name required")
+		}
+		return getESPNTeamID(strings.Join(args, " "))
+	case "espn-player":
+		return espnPlayer(args)
+	case "espn-player-bio":
+		return espnPlayerBio(args)
+	case "espn-player-stats":
+		return espnPlayerStats(args)
+	case "espn-player-contracts":
+		return espnPlayerContracts(args)
+	case "espn-teams":
+		return espnTeams()
+	case "espn-team-roster":
+		if len(args) < 1 {
+			return nil, errors.New("team id or name required")
+		}
+		return espnTeamRoster(strings.Join(args, " "))
+	case "espn-injuries":
+		return espnInjuries(args)
+	case "espn-news":
+		return espnNews(args)
+	case "espn-scoreboard":
+		return espnScoreboard(args)
+	case "espn-game-summary":
+		return need1(args, espnGameSummary)
+	case "espn-standings":
+		return espnStandings()
 	case "get-team-id":
 		if len(args) < 1 {
 			return nil, errors.New("team name required")
@@ -122,10 +188,24 @@ func run(cmd string, args []string) (any, error) {
 			return nil, errors.New("player name required")
 		}
 		return getPlayerID(strings.Join(args, " "))
+	case "player-profile":
+		return statsNeedID(args, "commonplayerinfo", map[string]string{"PlayerID": "%s"})
+	case "player-awards":
+		return statsNeedID(args, "playerawards", map[string]string{"PlayerID": "%s", "LeagueID": "__omit__", "SeasonType": "__omit__"})
 	case "player-career-stats":
 		return statsNeedID(args, "playercareerstats", map[string]string{"PlayerID": "%s", "PerMode": "PerGame"})
 	case "player-game-log":
 		return statsNeedID(args, "playergamelog", map[string]string{"PlayerID": "%s", "Season": currentSeason(), "SeasonType": "Regular Season"})
+	case "league-leaders":
+		return leagueLeaders(args)
+	case "player-estimated-metrics":
+		return stats("playerestimatedmetrics", map[string]string{"Season": currentSeason(), "SeasonType": "Regular Season"})
+	case "draft-history":
+		return draftHistory(args)
+	case "franchise-history":
+		return stats("franchisehistory", map[string]string{"SeasonType": "__omit__"})
+	case "team-details":
+		return statsNeedID(args, "teamdetails", map[string]string{"TeamID": "%s", "SeasonType": "__omit__"})
 	case "league-dash-player-stats":
 		if len(args) < 1 {
 			return nil, errors.New("team_id required")
@@ -516,6 +596,309 @@ func getPlayerID(name string) (any, error) {
 		}
 	}
 	return nil, errors.New("player not found")
+}
+
+func leagueLeaders(args []string) (any, error) {
+	return stats("leagueleaders", map[string]string{
+		"StatCategory": strings.ToUpper(opt(args, 0, "PTS")),
+		"PerMode":      opt(args, 1, "PerGame"),
+		"Scope":        "S",
+		"Season":       currentSeason(),
+		"SeasonType":   "Regular Season",
+	})
+}
+
+func draftHistory(args []string) (any, error) {
+	season := currentSeason()[:4]
+	if len(args) > 0 && args[0] != "" {
+		season = args[0]
+	}
+	return stats("drafthistory", map[string]string{
+		"Season":      season,
+		"College":     "",
+		"OverallPick": "",
+		"RoundNum":    "",
+		"RoundPick":   "",
+		"TeamID":      "0",
+		"TopX":        "",
+		"SeasonType":  "__omit__",
+	})
+}
+
+func espnSearchPlayers(name string, limit int) (any, error) {
+	q := url.Values{}
+	q.Set("query", name)
+	q.Set("limit", strconv.Itoa(limit))
+	q.Set("mode", "prefix")
+	q.Set("type", "player")
+	return getJSON(espnWebBase+"/common/v3/search?"+q.Encode(), nil)
+}
+
+func resolveESPNPlayerID(q string) (string, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", errors.New("player id or name required")
+	}
+	if isDigits(q) {
+		return q, nil
+	}
+	res, err := espnSearchPlayers(q, 10)
+	if err != nil {
+		return "", err
+	}
+	m, _ := res.(map[string]any)
+	items, _ := m["items"].([]any)
+	for _, item := range items {
+		im, _ := item.(map[string]any)
+		if fmt.Sprint(im["type"]) != "player" {
+			continue
+		}
+		if leagueAny, ok := im["league"]; ok {
+			if league := strings.ToLower(fmt.Sprint(leagueAny)); league != "" && league != "<nil>" && league != "nba" {
+				continue
+			}
+		}
+		id := fmt.Sprint(im["id"])
+		if id != "" && id != "<nil>" {
+			return id, nil
+		}
+	}
+	return "", errors.New("ESPN player not found")
+}
+
+func espnPlayer(args []string) (any, error) {
+	if len(args) < 1 {
+		return nil, errors.New("player id or name required")
+	}
+	id, err := resolveESPNPlayerID(strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	return getJSON(espnWebBase+"/common/v3/sports/basketball/nba/athletes/"+url.PathEscape(id), nil)
+}
+
+func espnPlayerBio(args []string) (any, error) {
+	if len(args) < 1 {
+		return nil, errors.New("player id or name required")
+	}
+	id, err := resolveESPNPlayerID(strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	return getJSON(espnWebBase+"/common/v3/sports/basketball/nba/athletes/"+url.PathEscape(id)+"/bio", nil)
+}
+
+func espnPlayerStats(args []string) (any, error) {
+	if len(args) < 1 {
+		return nil, errors.New("player id or name required")
+	}
+	id, err := resolveESPNPlayerID(strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	return getJSON(espnCoreBase+"/athletes/"+url.PathEscape(id)+"/statistics?lang=en&region=us", nil)
+}
+
+func espnPlayerContracts(args []string) (any, error) {
+	id, season, err := parseESPNContractArgs(args)
+	if err != nil {
+		return nil, err
+	}
+	if season != "" {
+		contract, err := getJSON(espnCoreBase+"/athletes/"+url.PathEscape(id)+"/contracts/"+url.PathEscape(season)+"?lang=en&region=us", nil)
+		if err != nil {
+			return nil, err
+		}
+		return anyMap{"athleteId": id, "season": season, "contract": contract}, nil
+	}
+
+	index, err := getJSON(espnCoreBase+"/athletes/"+url.PathEscape(id)+"/contracts?lang=en&region=us", nil)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := index.(map[string]any)
+	items, _ := m["items"].([]any)
+	contracts := make([]any, 0, len(items))
+	for _, item := range items {
+		contract, err := derefESPN(item)
+		if err != nil {
+			contracts = append(contracts, anyMap{"ref": refString(item), "error": err.Error()})
+			continue
+		}
+		contracts = append(contracts, contract)
+	}
+	return anyMap{"athleteId": id, "count": len(contracts), "contracts": contracts}, nil
+}
+
+func parseESPNContractArgs(args []string) (string, string, error) {
+	if len(args) < 1 {
+		return "", "", errors.New("player id or name required")
+	}
+	season := ""
+	playerArgs := args
+	if len(args) > 1 && regexp.MustCompile(`^\d{4}$`).MatchString(args[len(args)-1]) {
+		season = args[len(args)-1]
+		playerArgs = args[:len(args)-1]
+	}
+	id, err := resolveESPNPlayerID(strings.Join(playerArgs, " "))
+	return id, season, err
+}
+
+func espnTeams() (any, error) {
+	return getJSON(espnSiteBase+"/teams", nil)
+}
+
+func resolveESPNTeamID(q string) (string, error) {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return "", errors.New("team id or name required")
+	}
+	if isDigits(q) {
+		return q, nil
+	}
+	v, err := getESPNTeamID(q)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(v), nil
+}
+
+func getESPNTeamID(name string) (any, error) {
+	team, err := findESPNTeam(name)
+	if err != nil {
+		return nil, err
+	}
+	return team["id"], nil
+}
+
+func findESPNTeam(name string) (map[string]any, error) {
+	res, err := espnTeams()
+	if err != nil {
+		return nil, err
+	}
+	needle := normalizeName(name)
+	root, _ := res.(map[string]any)
+	sports, _ := root["sports"].([]any)
+	for _, sport := range sports {
+		sm, _ := sport.(map[string]any)
+		leagues, _ := sm["leagues"].([]any)
+		for _, league := range leagues {
+			lm, _ := league.(map[string]any)
+			teams, _ := lm["teams"].([]any)
+			for _, t := range teams {
+				tm, _ := t.(map[string]any)
+				team, _ := tm["team"].(map[string]any)
+				candidates := []string{"displayName", "shortDisplayName", "abbreviation", "name", "location", "slug"}
+				for _, c := range candidates {
+					val := normalizeName(fmt.Sprint(team[c]))
+					if val == needle || (len(needle) >= 3 && strings.Contains(val, needle)) || (len(val) >= 4 && strings.Contains(needle, val)) {
+						return team, nil
+					}
+				}
+			}
+		}
+	}
+	return nil, errors.New("ESPN team not found")
+}
+
+func espnTeamRoster(q string) (any, error) {
+	id, err := resolveESPNTeamID(q)
+	if err != nil {
+		return nil, err
+	}
+	return getJSON(espnSiteBase+"/teams/"+url.PathEscape(id)+"/roster", nil)
+}
+
+func espnInjuries(args []string) (any, error) {
+	res, err := getJSON(espnSiteBase+"/injuries", nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(args) == 0 {
+		return res, nil
+	}
+	id, err := resolveESPNTeamID(strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	root, _ := res.(map[string]any)
+	teams, _ := root["injuries"].([]any)
+	for _, t := range teams {
+		tm, _ := t.(map[string]any)
+		if sameID(tm["id"], id) {
+			return tm, nil
+		}
+	}
+	return anyMap{"teamId": id, "injuries": []any{}}, nil
+}
+
+func espnNews(args []string) (any, error) {
+	limit := 10
+	if len(args) > 0 {
+		if n, err := strconv.Atoi(args[0]); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(limit))
+	return getJSON(espnSiteBase+"/news?"+q.Encode(), nil)
+}
+
+func espnScoreboard(args []string) (any, error) {
+	q := url.Values{}
+	if len(args) > 0 && args[0] != "" {
+		q.Set("dates", args[0])
+	}
+	u := espnSiteBase + "/scoreboard"
+	if len(q) > 0 {
+		u += "?" + q.Encode()
+	}
+	return getJSON(u, nil)
+}
+
+func espnGameSummary(id string) (any, error) {
+	q := url.Values{}
+	q.Set("event", id)
+	return getJSON(espnSiteBase+"/summary?"+q.Encode(), nil)
+}
+
+func espnStandings() (any, error) {
+	return getJSON(espnWebBase+"/v2/sports/basketball/nba/standings?region=us&lang=en&contentorigin=espn&type=0&level=3&sort=winPercent%3Adesc", nil)
+}
+
+func derefESPN(item any) (any, error) {
+	ref := refString(item)
+	if ref == "" {
+		return item, nil
+	}
+	ref = strings.Replace(ref, "http://sports.core.api.espn.com/", "https://sports.core.api.espn.com/", 1)
+	return getJSON(ref, nil)
+}
+
+func refString(item any) string {
+	m, _ := item.(map[string]any)
+	if ref, ok := m["$ref"]; ok && ref != nil {
+		return fmt.Sprint(ref)
+	}
+	return ""
+}
+
+func normalizeName(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	re := regexp.MustCompile(`[^a-z0-9]+`)
+	return strings.Trim(re.ReplaceAllString(s, " "), " ")
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func leagueSchedule(args []string) (any, error) {

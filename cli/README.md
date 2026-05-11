@@ -1,6 +1,6 @@
 # nba-cli
 
-Standalone Go command-line interface for NBA live scores, stats, and DARKO projections. No Python runtime is required.
+Standalone Go command-line interface for NBA live scores, official NBA stats, DARKO projections, and ESPN public data including contracts, injuries, player bios, news, rosters, scoreboards, and game summaries. No Python runtime is required.
 
 ## Build
 
@@ -52,6 +52,12 @@ nba update
 ./nba live-play-by-play 0022400123
 ./nba darko-player "Nikola Jokic"
 ./nba darko-leaderboard 10
+./nba espn-player-contracts "LeBron James" 2026
+./nba espn-player-stats "Nikola Jokic"
+./nba espn-injuries lakers
+./nba espn-news 5
+./nba player-awards 2544
+./nba league-leaders PTS
 ./nba update ./nba
 ```
 

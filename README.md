@@ -1,6 +1,6 @@
 # nba-cli
 
-Standalone Go command-line interface for NBA live scores, stats, lineup data, and DARKO projections. All command output is JSON. No Python runtime is required.
+Standalone Go command-line interface for NBA live scores, stats, lineup data, DARKO projections, and ESPN public data including contracts, injuries, news, player bios, rosters, scoreboards, and game summaries. All command output is JSON. No Python runtime is required.
 
 ## Install
 
@@ -58,13 +58,13 @@ nba get-team-id "Los Angeles Lakers"
 # Player stats
 nba player-career-stats 2544
 nba player-game-log 2544
-nba league-dash-player-stats 1610612747 --measure-type Advanced
+nba league-dash-player-stats 1610612747 Advanced
 
 # Team stats
 nba team-standings
 nba team-game-log 1610612747
 nba team-roster 1610612747
-nba league-dash-team-stats --measure-type Advanced
+nba league-dash-team-stats Advanced
 
 # Games / live data
 nba league-schedule 1610612747
@@ -79,14 +79,26 @@ nba game-boxscore 0022400123
 nba darko-leaderboard 10
 nba darko-player "Nikola Jokic"
 
+# ESPN public data
+nba espn-search-player "LeBron James"
+nba get-espn-player-id "LeBron James"
+nba espn-player-contracts "LeBron James" 2026
+nba espn-player-bio "Nikola Jokic"
+nba espn-player-stats "Nikola Jokic"
+nba espn-injuries lakers
+nba espn-news 5
+nba espn-scoreboard 20260511
+nba espn-game-summary 401705298
+nba espn-standings
+
 # Keep the installed CLI current
 nba update
 
 # Lineups
-nba league-dash-lineups 1610612747 --lineup-count 2
+nba league-dash-lineups 1610612747 Advanced 2
 ```
 
-Run `nba --help` or `nba <command> --help` for the full list.
+Run `nba --help` for the full list.
 
 ## Available commands
 
@@ -96,15 +108,22 @@ Run `nba --help` or `nba <command> --help` for the full list.
 - `get-team-id` — convert a team name to an ID
 
 ### Player
+- `player-profile` — official NBA common player profile and bio fields
+- `player-awards` — official NBA award history for a player
 - `player-career-stats` — career statistics for a player
 - `player-game-log` — game-by-game logs for a player
 - `league-dash-player-stats` — stats for all players on a team
+- `league-leaders` — official NBA leaderboards by stat category
+- `player-estimated-metrics` — official NBA estimated metrics
 
-### Team
+### Team / league
 - `team-standings` — current NBA standings
 - `team-game-log` — game log for a team
 - `team-roster` — roster for a team
+- `team-details` — arena, ownership, and franchise background
 - `league-dash-team-stats` — stats for all NBA teams
+- `draft-history` — official NBA draft history by year
+- `franchise-history` — historical NBA franchise records
 
 ### Game / live
 - `league-schedule` — schedule for a team's games
@@ -121,3 +140,17 @@ Run `nba --help` or `nba <command> --help` for the full list.
 ### DARKO
 - `darko-leaderboard` — current DARKO DPM leaderboard from darko.app
 - `darko-player` — DARKO projection metrics by NBA ID or name fragment
+
+### ESPN public data
+- `espn-search-player` / `get-espn-player-id` — resolve ESPN NBA player IDs
+- `get-espn-team-id` — resolve ESPN team IDs
+- `espn-player` — ESPN player card/profile data
+- `espn-player-bio` — ESPN awards and biographical extras
+- `espn-player-stats` — ESPN player statistics and splits
+- `espn-player-contracts` — ESPN contract/salary data by player, optionally by season year
+- `espn-teams` / `espn-team-roster` — ESPN team index and rosters
+- `espn-injuries` — league-wide or team-specific injury reports
+- `espn-news` — ESPN NBA news feed
+- `espn-scoreboard` — ESPN scoreboard/events feed
+- `espn-game-summary` — ESPN game summary, box score, leaders, plays, odds, and related data
+- `espn-standings` — ESPN standings hierarchy
